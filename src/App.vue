@@ -8,14 +8,10 @@ const currentQuestion = ref(0);
 const score = ref(0);
 const questions = ref([]);
 
-const getQuestions = async () => {
+const getQuestions = async (username) => {
   // Create a new session
-  const { data } = await axios.post('http://localhost:8090/sessions', { username: 'front' });
+  const { data } = await axios.post('http://localhost:8090/sessions', { username });
   sessionId.value = data.sessionId;
-
-  // // Get the session ID
-  // const { data: sessionData } = await axios.get('http://localhost:8090/sessions/current/id');
-  // sessionId.value = sessionData.sessionId;
 
   // Get the quiz questions
   const { data: quizData } = await axios.get(`http://localhost:8090/sessions/${sessionId.value}`);
@@ -31,7 +27,7 @@ const getCurrentQuestion = computed(() => {
   }
   const question = { ...questions.value[currentQuestion.value] };
   question.index = currentQuestion.value;
-  console.log(question)
+
   return question;
 });
 
@@ -43,7 +39,7 @@ const submitQuestion = () => {
     }
   } else {
     const selected = new Set(question.selected);
-    const correct = new Set(question.variants.filter(v => v.is_correct).map(v => v.variant));
+    const correct = new Set(question.variants.filter(v => v.is_correct).map(v => v.id.toString()));
     if (selected.size === correct.size && [...selected].every(s => correct.has(s))) {
       score.value++; // update score
     }
@@ -55,32 +51,76 @@ const setAnswer = evt => {
   if (question.is_multiple) {
     const selected = question.selected || []; // assign to empty array if null
     const index = selected.indexOf(evt.target.value);
-    if (index > -1) {
-      selected.splice(index, 1);
+    if (evt.target.checked) { // check if the checkbox is checked
+      if (index === -1) {
+        selected.push(evt.target.value);
+      }
     } else {
-      selected.push(evt.target.value);
+      if (index > -1) {
+        selected.splice(index, 1);
+      }
     }
     question.selected = selected; // update the question object with the new selected value
   } else {
     question.selected = evt.target.value;
   }
-  evt.target.checked = false; // uncheck the checkbox or radio button
+};
+
+
+
+const submitAnswers = async () => {
+  const answers = questions.value.map((question) => {
+    if (question.variants) {
+      return {
+        question_type: 'ma',
+        question_id: question.id,
+        selected_variants: [...question.selected].map((variant) => {
+          return {
+            variant_id: variant
+          };
+        }),
+      };
+    } else {
+      return {
+        question_type: 'tf',
+        question_id: question.id,
+        answer: question.selected === 'true' ? 1 : 0,
+      };
+    }
+  });
+
+  await axios.post(`http://localhost:8090/sessions/${sessionId.value}/answers`, { "answers": answers });
+
+  quizCompleted.value = true;
 };
 
 const nextQuestion = () => {
   if (currentQuestion.value < questions.value.length - 1) {
     currentQuestion.value++;
   } else {
-    quizCompleted.value = true;
+    submitAnswers();
   }
 };
+
+const hasSelectedOption = computed(() => {
+  const currentQues = getCurrentQuestion.value;
+  if (!currentQues) {
+    return false;
+  }
+  if (currentQues.variants && currentQues.variants.length > 0) {
+    return currentQues.selected && currentQues.selected.length > 0;
+  } else {
+    return currentQues.selected !== null;
+  }
+});
 
 const submitAndNextQuestion = () => {
   submitQuestion();
   nextQuestion();
 };
 
-getQuestions(); // call the function here to fetch the questions
+const username = window.prompt('Please enter your nickname:');
+getQuestions(username);
 
 </script>
 
@@ -98,8 +138,8 @@ getQuestions(); // call the function here to fetch the questions
             <label>
               <input
                   :type="getCurrentQuestion?.is_multiple ? 'checkbox' : 'radio'"
-                  :value="variant.variant"
-                  :checked="getCurrentQuestion?.is_multiple ? getCurrentQuestion.selected?.includes(variant.variant) : getCurrentQuestion.selected === variant.variant"
+                  :value="variant.id"
+                  :checked="getCurrentQuestion?.is_multiple ? getCurrentQuestion.selected?.includes(variant.id) : getCurrentQuestion.selected === variant.id"
                   @change="setAnswer"
               />
               {{ variant.variant }}
@@ -112,7 +152,7 @@ getQuestions(); // call the function here to fetch the questions
                 type="radio"
                 value="true"
                 v-model="getCurrentQuestion.selected"
-                @change="setAnswer"
+                @click="setAnswer"
             />
             True
           </label>
@@ -121,13 +161,14 @@ getQuestions(); // call the function here to fetch the questions
                 type="radio"
                 value="false"
                 v-model="getCurrentQuestion.selected"
-                @change="setAnswer"
+                @click="setAnswer"
             />
             False
           </label>
         </div>
       </div>
-      <button v-if="!quizCompleted" @click="submitAndNextQuestion">Next</button>
+      <button v-if="!quizCompleted" :disabled="!hasSelectedOption" @click="submitAndNextQuestion">Next</button>
+
       <div v-else>
         <h2>Quiz Completed!</h2>
         <p>Your score is {{ score }}/{{ questions.length }}</p>
