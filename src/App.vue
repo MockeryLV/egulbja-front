@@ -1,5 +1,5 @@
 <script setup>
-import { ref, computed } from 'vue';
+import {ref, computed} from 'vue';
 import axios from 'axios';
 
 const sessionId = ref(null);
@@ -10,11 +10,11 @@ const questions = ref([]);
 
 const getQuestions = async (username) => {
   // Create a new session
-  const { data } = await axios.post('http://localhost:8090/sessions', { username });
+  const {data} = await axios.post('http://localhost:8090/sessions', {username});
   sessionId.value = data.sessionId;
 
   // Get the quiz questions
-  const { data: quizData } = await axios.get(`http://localhost:8090/sessions/${sessionId.value}`);
+  const {data: quizData} = await axios.get(`http://localhost:8090/sessions/${sessionId.value}`);
   questions.value = quizData.questions;
 };
 
@@ -25,7 +25,7 @@ const getCurrentQuestion = computed(() => {
   if (currentQuestion.value >= questions.value.length || !questions.value[currentQuestion.value]) {
     return null; // or any other default value
   }
-  const question = { ...questions.value[currentQuestion.value] };
+  const question = {...questions.value[currentQuestion.value]};
   question.index = currentQuestion.value;
 
   return question;
@@ -67,7 +67,6 @@ const setAnswer = evt => {
 };
 
 
-
 const submitAnswers = async () => {
   const answers = questions.value.map((question) => {
     if (question.variants) {
@@ -89,14 +88,27 @@ const submitAnswers = async () => {
     }
   });
 
-  await axios.post(`http://localhost:8090/sessions/${sessionId.value}/answers`, { "answers": answers });
+  await axios.post(`http://localhost:8090/sessions/${sessionId.value}/answers`, {"answers": answers});
 
   quizCompleted.value = true;
 };
 
 const nextQuestion = () => {
+  const currentQues = getCurrentQuestion.value;
+  if (!currentQues) {
+    return;
+  }
+
+  // Reset selected property
+  if (currentQues.variants && currentQues.variants.length > 0) {
+    currentQues.selected = [];
+  } else {
+    currentQues.selected = null;
+  }
+
   if (currentQuestion.value < questions.value.length - 1) {
     currentQuestion.value++;
+    uncheckOptions();
   } else {
     submitAnswers();
   }
@@ -113,6 +125,13 @@ const hasSelectedOption = computed(() => {
     return currentQues.selected !== null;
   }
 });
+
+const uncheckOptions = () => {
+  const inputs = document.querySelectorAll('input[type=checkbox], input[type=radio]');
+  inputs.forEach(input => {
+    input.checked = false;
+  });
+};
 
 const submitAndNextQuestion = () => {
   submitQuestion();
@@ -139,7 +158,7 @@ getQuestions(username);
               <input
                   :type="getCurrentQuestion?.is_multiple ? 'checkbox' : 'radio'"
                   :value="variant.id"
-                  :checked="getCurrentQuestion?.is_multiple ? getCurrentQuestion.selected?.includes(variant.id) : getCurrentQuestion.selected === variant.id"
+                  :name="getCurrentQuestion?.is_multiple ? null : 'answer'"
                   @change="setAnswer"
               />
               {{ variant.variant }}
@@ -151,7 +170,7 @@ getQuestions(username);
             <input
                 type="radio"
                 value="true"
-                v-model="getCurrentQuestion.selected"
+                name="answer"
                 @click="setAnswer"
             />
             True
@@ -160,7 +179,7 @@ getQuestions(username);
             <input
                 type="radio"
                 value="false"
-                v-model="getCurrentQuestion.selected"
+                name="answer"
                 @click="setAnswer"
             />
             False
